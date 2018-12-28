@@ -1,0 +1,1 @@
+This module serves as build directory for this gradle multi-module project

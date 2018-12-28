@@ -1,0 +1,64 @@
+buildscript {
+    repositories {
+        maven { url "http://repo.spring.io/libs-release" }
+    }
+    dependencies {
+        classpath("org.springframework.boot:spring-boot-gradle-plugin:2.1.1.RELEASE")
+    }
+}
+
+allprojects {
+    apply plugin: 'base'
+}
+
+subprojects { subproject ->
+    apply plugin: 'java'
+    apply plugin: 'idea'
+    version =  '0.1.0'
+    repositories {
+        mavenCentral()
+        maven { url "http://repo.spring.io/libs-release" }
+    }
+    dependencies {
+        compile("org.springframework.data:spring-yarn-boot:2.4.0.RELEASE")
+    }
+    def copyJars = task('copyJars', type: Copy) {
+        from(file("$buildDir/libs"))
+        into(file("$rootDir/yarn-dist/target/yarn-dist/"))
+        include("**/*.jar")
+    }
+
+    assemble.doLast {copyJars.execute()}
+}
+
+project('yarn-client') {
+    plugins.apply("org.springframework.boot")
+}
+
+project('yarn-appmaster') {
+    plugins.apply("org.springframework.boot")
+}
+
+project('yarn-container') {
+    plugins.apply("org.springframework.boot")
+}
+
+project('yarn-dist') {
+    dependencies {
+        compile project(":yarn-client")
+        compile project(":yarn-appmaster")
+        compile project(":yarn-container")
+        testCompile("org.springframework.data:spring-yarn-boot-test:2.4.0.RELEASE")
+        testCompile("org.hamcrest:hamcrest-core:1.2.1")
+        testCompile("org.hamcrest:hamcrest-library:1.2.1")
+    }
+    test.dependsOn(':yarn-client:assemble')
+    test.dependsOn(':yarn-appmaster:assemble')
+    test.dependsOn(':yarn-container:assemble')
+    clean.doLast {ant.delete(dir: "target")}
+    jar.enabled = false
+}
+
+task wrapper(type: Wrapper) {
+    gradleVersion = '4.10.2'
+}

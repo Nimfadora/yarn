@@ -1,0 +1,6 @@
+rootProject.name = 'booking'
+include 'yarn-appmaster'
+include 'yarn-client'
+include 'yarn-container'
+include 'yarn-dist'
+
