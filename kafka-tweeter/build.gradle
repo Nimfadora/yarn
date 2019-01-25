@@ -1,0 +1,33 @@
+plugins {
+    id "com.github.johnrengelman.shadow" version "4.0.3"
+    id "java"
+}
+
+repositories {
+    jcenter()
+    mavenCentral()
+}
+
+group 'com.vasileva'
+version '0.1.0'
+
+sourceCompatibility = 1.8
+
+dependencies {
+    compile group: 'org.apache.spark', name: 'spark-core_2.11', version: '2.3.2'
+    compile group: 'org.apache.spark', name: 'spark-sql_2.11', version: '2.3.2'
+    compile group: 'ch.qos.logback', name: 'logback-classic', version: '1.2.3'
+    compile group: 'org.twitter4j', name: 'twitter4j-stream', version: '4.0.7'
+    compile group: 'org.apache.kafka', name: 'kafka-clients', version: '1.0.0'
+    compile group: 'com.google.guava', name: 'guava', version: '19.0'
+    testCompile group: 'junit', name: 'junit', version: '4.12'
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'com.vasileva.twitter.producer.TwitProducerMain'
+    }
+    baseName = 'streaming'
+    version = '1.0'
+    zip64 true
+}
