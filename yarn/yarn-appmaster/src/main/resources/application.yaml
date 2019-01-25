@@ -1,0 +1,29 @@
+spring:
+  batch:
+    job:
+      enabled: false
+  hadoop:
+    fsUri: hdfs://localhost:19000
+    resourceManagerHost: localhost
+  yarn:
+    appName: booking
+    applicationDir: /app/booking/
+    batch:
+      enabled: true
+      name: job
+      jobs:
+      - name: job
+        enabled: true
+        next: true
+        parameters:
+          ? inputPatterns
+          : "/user/root/yarn/*"
+          ? outputPatterns
+          : "/user/root/yarn-out/part_"
+          ? resultFilename
+          : "/user/root/yarn-out/result.txt"
+    appmaster:
+      containerCount: 4
+      keepContextAlive: false
+      launchcontext:
+        archiveFile: yarn-container-0.1.0.jar

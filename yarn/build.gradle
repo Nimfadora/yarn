@@ -14,7 +14,7 @@ allprojects {
 subprojects { subproject ->
     apply plugin: 'java'
     apply plugin: 'idea'
-    version =  '0.1.0'
+    version = '0.1.0'
     repositories {
         mavenCentral()
         maven { url "http://repo.spring.io/libs-release" }
@@ -28,7 +28,12 @@ subprojects { subproject ->
         include("**/*.jar")
     }
 
-    assemble.doLast {copyJars.execute()}
+    configurations {
+        compile.exclude group: "org.slf4j", module: "slf4j-log4j12"
+        runtime.exclude group: "org.slf4j", module: "slf4j-log4j12"
+    }
+
+    assemble.doLast { copyJars.execute() }
 }
 
 project('yarn-client') {
@@ -37,10 +42,20 @@ project('yarn-client') {
 
 project('yarn-appmaster') {
     plugins.apply("org.springframework.boot")
+    dependencies {
+        compile("org.springframework.data:spring-yarn-batch:2.4.0.RELEASE")
+        runtime("org.springframework.boot:spring-boot-starter-batch:1.3.3.RELEASE")
+        runtime("org.hsqldb:hsqldb:2.3.1")
+        runtime("commons-dbcp:commons-dbcp:1.2.2")
+    }
 }
 
 project('yarn-container') {
     plugins.apply("org.springframework.boot")
+    dependencies {
+        compile("org.springframework.data:spring-yarn-batch:2.4.0.RELEASE")
+        runtime("org.springframework.boot:spring-boot-starter-batch:1.3.3.RELEASE")
+    }
 }
 
 project('yarn-dist') {
@@ -48,6 +63,7 @@ project('yarn-dist') {
         compile project(":yarn-client")
         compile project(":yarn-appmaster")
         compile project(":yarn-container")
+        testCompile("org.hsqldb:hsqldb:2.3.1")
         testCompile("org.springframework.data:spring-yarn-boot-test:2.4.0.RELEASE")
         testCompile("org.hamcrest:hamcrest-core:1.2.1")
         testCompile("org.hamcrest:hamcrest-library:1.2.1")
@@ -55,7 +71,7 @@ project('yarn-dist') {
     test.dependsOn(':yarn-client:assemble')
     test.dependsOn(':yarn-appmaster:assemble')
     test.dependsOn(':yarn-container:assemble')
-    clean.doLast {ant.delete(dir: "target")}
+    clean.doLast { ant.delete(dir: "target") }
     jar.enabled = false
 }
 
