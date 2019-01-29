@@ -1,0 +1,8 @@
+#start batch consumer job
+spark-submit --class com.vasileva.twitter.consumer.TwitBatchConsumerMain --packages org.apache.spark:spark-sql-kafka-0-10_2.11:2.3.2 --master yarn --deploy-mode cluster --driver-memory 1g --executor-memory 1g --executor-cores 2 spark-batch-v2.jar "{\"spark-twitter\":{\"0\":0,\"1\":0,\"2\":0} }" "hdfs://sandbox-hdp.hortonworks.com:8020/user/root/twitter/" 6 10
+
+#start producer
+java -jar kafka-producer-v2.jar spark-twitter
+
+#read results
+hadoop jar parquet-tools-1.9.0.jar head /user/root/twitter/hashtags/date=2019-01-29/hour=09/part-00000-5493ef13-8408-4f9a-bb2c-7f49d8c761b3.c000.snappy.parquet

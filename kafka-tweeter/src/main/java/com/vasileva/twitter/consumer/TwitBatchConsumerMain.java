@@ -6,10 +6,12 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.spark.sql.SparkSession;
 
 import java.io.IOException;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Reads data from Kafka topic in batch mode, saves it to HDFS
+ * Consumes data from Kafka twit topic in a batch mode, aggregates counts by hashtags in hourly manner,
+ * saves results to HDFS partitioned by date and hour.
  */
 public class TwitBatchConsumerMain {
 
@@ -21,9 +23,9 @@ public class TwitBatchConsumerMain {
         long batchSize = Long.parseLong(args[2]);
         long timeout = TimeUnit.MINUTES.toMillis(Integer.parseInt(args[3]));
 
-        OffsetConverter.Offset offset = OffsetConverter.parseFromJSONString(offsetString);
-        String topic = offset.topic2partitions.keySet().iterator().next();
-        int partitionsCount = offset.topic2partitions.get(topic).size();
+        Map<String, Map<String, Long>> offsets = OffsetUtils.parseTopicPartitionsOffsets(offsetString);
+        String topic = offsets.keySet().iterator().next();
+        int partitionsCount = offsets.get(topic).size();
 
         Preconditions.checkArgument(batchSize % partitionsCount == 0,
                 "Illegal batch size, it should be common multiple of partitions count");

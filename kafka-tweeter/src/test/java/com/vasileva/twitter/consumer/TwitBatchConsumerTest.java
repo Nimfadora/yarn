@@ -88,7 +88,7 @@ public class TwitBatchConsumerTest {
     public void testMergeArchiveStats() throws IOException {
         String previousBatchStats = TwitBatchConsumerTest.class.getResource("/stats_1.csv").getPath();
         Dataset<Row> previousStats = spark.read().schema(HASHTAG_STATS_SCHEMA).csv(previousBatchStats);
-        consumer.writeData(previousStats, Collections.emptyList());
+        consumer.writeStats(previousStats, Collections.emptyList());
 
         assertTrue(fs.exists(new Path(outputPath)));
         assertTrue(fs.exists(new Path(outputPath, "date=2018-12-20/hour=11")));
@@ -117,7 +117,7 @@ public class TwitBatchConsumerTest {
         assertEquals(6, actualStats.size());
         assertTrue(expectedStats.containsAll(actualStats));
 
-        consumer.writeData(resultStats, partitionsPaths);
+        consumer.writeStats(resultStats, partitionsPaths);
 
         Dataset<Row> wholeDataset = consumer.getArchivedStats(Collections.singletonList(new Path(outputPath).toString()));
         List<String> wholeData = collectStatsToString(wholeDataset);

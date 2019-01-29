@@ -1,6 +1,9 @@
 package com.vasileva.twitter.consumer;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.reflect.TypeToken;
+import com.google.gson.Gson;
+import com.google.gson.JsonSyntaxException;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.spark.sql.Dataset;
@@ -13,7 +16,6 @@ import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
-import org.codehaus.jackson.map.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.collection.JavaConverters;
@@ -27,6 +29,10 @@ import static org.apache.spark.sql.functions.*;
 import static org.apache.spark.sql.types.DataTypes.LongType;
 import static org.apache.spark.sql.types.DataTypes.StringType;
 
+/**
+ * Consumes data from Kafka twit topic in a batch mode, aggregates counts by hashtags in hourly manner,
+ * saves results to HDFS partitioned by date and hour.
+ */
 class TwitBatchConsumer {
     private static final String BOOTSTRAP_SERVERS = "sandbox-hdp.hortonworks.com:6667";
     private static final Logger LOG = LoggerFactory.getLogger(TwitBatchConsumer.class);
@@ -42,26 +48,29 @@ class TwitBatchConsumer {
     private final FileSystem fs;
     private final String topic;
     private final String outputDir;
+    private final String tmpDir;
     private final String initialOffset;
     private final long partitionBatchSize;
     private final long timeout;
 
-    TwitBatchConsumer(SparkSession spark, FileSystem fs, String outputDir, String topic,
-                      String initialOffset, long partitionBatchSize, long timeout) {
+    TwitBatchConsumer(SparkSession spark, FileSystem fs, String baseDir, String topic,
+                      String initialOffset, long partitionBatchSize, long timeout) throws IOException {
         this.spark = spark;
         this.fs = fs;
-        this.outputDir = outputDir;
+        this.outputDir = new Path(baseDir, "hashtags").toString();
+        this.tmpDir = new Path(baseDir, "tmp").toString();
         this.topic = topic;
         this.initialOffset = initialOffset;
         this.partitionBatchSize = partitionBatchSize;
         this.timeout = timeout;
         spark.udf().register("getHashtagText", GET_HASHTAG_TEXT);
+        fs.mkdirs(new Path(outputDir));
     }
 
     void start() throws InterruptedException, IOException {
         long endTime = System.currentTimeMillis() + timeout;
         String startOffset = initialOffset;
-        String endOffset = OffsetConverter.getEndOffset(startOffset, partitionBatchSize);
+        String endOffset = OffsetUtils.getEndOffsets(startOffset, partitionBatchSize);
 
         while (System.currentTimeMillis() < endTime) {
             LOG.info("Processing batch");
@@ -76,16 +85,26 @@ class TwitBatchConsumer {
             List<String> partitionPaths = getPartitionPaths(batchStats);
             Dataset<Row> archivedStats = getArchivedStats(partitionPaths);
 
-            writeData(mergeArchiveStats(batchStats, archivedStats), partitionPaths);
+            writeStats(mergeArchiveStats(batchStats, archivedStats), partitionPaths);
 
             startOffset = endOffset;
-            endOffset = OffsetConverter.getEndOffset(startOffset, partitionBatchSize);
+            endOffset = OffsetUtils.getEndOffsets(startOffset, partitionBatchSize);
 
             LOG.info("Start offsets: " + startOffset);
             LOG.info("End offsets: " + endOffset);
             LOG.info("Batch processing finished");
             Thread.sleep(2000);
         }
+    }
+
+    private Dataset<Row> readBatch(String startOffset, String endOffset) {
+        return spark.read()
+                .format("kafka")
+                .option("kafka.bootstrap.servers", BOOTSTRAP_SERVERS)
+                .option("subscribe", topic)
+                .option("startingOffsets", startOffset)
+                .option("endingOffsets", endOffset)
+                .load();
     }
 
     /**
@@ -104,26 +123,9 @@ class TwitBatchConsumer {
                 .collect(Collectors.toList());
     }
 
-    private boolean fileExists(String path) {
-        try {
-            return fs.exists(new Path(path));
-        } catch (IOException e) {
-            throw new IllegalStateException("Exception occurred while fetching partitions: " + e.getMessage(), e);
-        }
-    }
-
-    private Dataset<Row> readBatch(String startOffset, String endOffset) {
-        return spark.read()
-                .format("kafka")
-                .option("kafka.bootstrap.servers", BOOTSTRAP_SERVERS)
-                .option("subscribe", topic)
-                .option("startingOffsets", startOffset)
-                .option("endingOffsets", endOffset)
-                .load();
-    }
-
     /**
-     * Reading partitions that should be updated during the current batch.
+     * Reading partitions that should be updated during the current batch. Reading the whole data is not optimal,
+     * as post-processing after join by partitions will be harder than after union.
      *
      * @param paths path to partitions
      * @return partitions data
@@ -133,14 +135,21 @@ class TwitBatchConsumer {
         Seq<String> filePaths = JavaConverters.asScalaIteratorConverter(paths.iterator()).asScala().toSeq();
         return spark.read()
                 .schema(HASHTAG_STATS_SCHEMA)
-                .option("basePath", outputDir)
+                .option("basePath", outputDir) // to preserve partition columns
                 .parquet(filePaths)
                 .select("date", "hour", "hashtag", "cnt");
     }
 
+    /**
+     * Parsing JSON twitter status, getting hashtags from it and aggregating stats by date, hour and hashtag text.
+     *
+     * @param batchData Dataset with Kafka messages
+     * @return Dataset with counts by hashtag, date and hour
+     * @see TwitBatchConsumer#HASHTAG_STATS_SCHEMA
+     */
     @VisibleForTesting
-    public Dataset<Row> aggStats(Dataset<Row> rawData) {
-        return rawData.selectExpr("CAST(value AS STRING)", "CAST(timestamp AS LONG)")
+    public Dataset<Row> aggStats(Dataset<Row> batchData) {
+        return batchData.selectExpr("CAST(value AS STRING)", "CAST(timestamp AS LONG)")
                 .withColumn("hashtags_array", get_json_object(col("value"), "$.entities.hashtags"))
                 .withColumn("hashtag", explode(callUDF("getHashtagText", col("hashtags_array"))))
                 .withColumn("date", from_unixtime(col("timestamp"), "yyyy-MM-dd"))
@@ -163,31 +172,38 @@ class TwitBatchConsumer {
      * As we re-reading previous partitions in the same job we cannot overwrite data at once, as it is the source
      * of DAG. We have to save data to temporary directory, re-read it and then overwrite the archived partitions.
      *
-     * @param data
-     * @throws IOException
+     * @param stats stats to be written
+     * @param previousStatsPaths path to archive partitions which must be overwritten
+     * @throws IOException if exception occurres while writing
      */
     @VisibleForTesting
-    public void writeData(Dataset<Row> data, List<String> partitionsPath) throws IOException {
-        Path tmpPath = new Path(fs.getHomeDirectory(), "tmp/");
-
+    public void writeStats(Dataset<Row> stats, List<String> previousStatsPaths) throws IOException {
         // write to temp directory
-        data.write().partitionBy("date", "hour").parquet(tmpPath.toString());
+        fs.delete(new Path(tmpDir), true);
+        stats.write().partitionBy("date", "hour").parquet(tmpDir);
 
-        partitionsPath.forEach(p -> {
-            try {
-                fs.delete(new Path(p), true);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        });
+        // delete previous stats partitions, as overwrite mode just overwrites the whole base directory,
+        // don't preserving the partitions that were not updated
+        for (String partitionPath : previousStatsPaths) {
+            fs.delete(new Path(partitionPath), true);
+        }
+
         // write the result to the result directory, overwriting archived partitions
         spark.read().schema(HASHTAG_STATS_SCHEMA)
-                .parquet(tmpPath.toString())
+                .parquet(tmpDir)
                 .write()
                 .partitionBy("date", "hour")
                 .mode(SaveMode.Append).parquet(outputDir);
-        fs.delete(tmpPath, true);
-//        FileUtil.copy(fs, new Path(tmpPath + "/*"), fs, new Path(outputDir), true, true, fs.getConf());
+
+        fs.delete(new Path(tmpDir), true);
+    }
+
+    private boolean fileExists(String path) {
+        try {
+            return fs.exists(new Path(path));
+        } catch (IOException e) {
+            throw new IllegalStateException("Exception occurred while fetching partitions: " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -197,14 +213,14 @@ class TwitBatchConsumer {
      * ["AI", "ArtificialIntelligence"]
      */
     private static UserDefinedFunction GET_HASHTAG_TEXT = udf((UDF1<String, String[]>) hashtagString -> {
-        ObjectMapper mapper = new ObjectMapper();
+        Gson mapper = new Gson();
         if (hashtagString == null || hashtagString.isEmpty() || hashtagString.equals("[]")) {
             return null;
         }
         try {
-            List<Hashtag> hashtagObjects = mapper.readValue(hashtagString, mapper.getTypeFactory().constructCollectionType(List.class, Hashtag.class));
+            List<Hashtag> hashtagObjects = mapper.fromJson(hashtagString, new TypeToken<List<Hashtag>>() {}.getType());
             return hashtagObjects.stream().map(e -> e.text).toArray(String[]::new);
-        } catch (IOException e) {
+        } catch (JsonSyntaxException e) {
             return null;
         }
     }, DataTypes.createArrayType(DataTypes.StringType));
