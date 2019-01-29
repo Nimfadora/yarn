@@ -40,7 +40,7 @@ public class TwitProducer implements StatusListener {
         String record = TwitterObjectFactory.getRawJSON(status);
         LOG.info("Received record: course " + record);
 
-        ProducerRecord<String, String> msg = new ProducerRecord<>(kafkaTopic, status.getUser().getName(), record);
+        ProducerRecord<String, String> msg = new ProducerRecord<>(kafkaTopic, null, status.getCreatedAt().getTime(), status.getUser().getName(), record);
         kafkaProducer.send(msg, callback());
     }
 

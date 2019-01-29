@@ -1,8 +1,11 @@
 package com.vasileva.twitter.consumer;
 
 import com.google.common.base.Preconditions;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.spark.sql.SparkSession;
 
+import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -10,7 +13,7 @@ import java.util.concurrent.TimeUnit;
  */
 public class TwitBatchConsumerMain {
 
-    public static void main(String[] args) throws InterruptedException {
+    public static void main(String[] args) throws InterruptedException, IOException {
         Preconditions.checkArgument(args.length == 4, "Illegal number of args, should be 3: offset, outputDir, batchSize");
 
         String offsetString = args[0];
@@ -24,8 +27,11 @@ public class TwitBatchConsumerMain {
 
         Preconditions.checkArgument(batchSize % partitionsCount == 0,
                 "Illegal batch size, it should be common multiple of partitions count");
+
+        FileSystem fs = FileSystem.get(new Configuration());
+
         try (SparkSession spark = SparkSession.builder().appName("BatchConsumer").getOrCreate()) {
-            TwitBatchConsumer consumer = new TwitBatchConsumer(spark, outputDir, topic, offsetString, batchSize / partitionsCount, timeout);
+            TwitBatchConsumer consumer = new TwitBatchConsumer(spark, fs, outputDir, topic, offsetString, batchSize / partitionsCount, timeout);
             consumer.start();
         }
     }

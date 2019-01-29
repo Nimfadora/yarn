@@ -95,7 +95,9 @@ SELECT to_date(ts) bid_date, COUNT(*) cnt FROM bids_ext GROUP BY bid_date;
 -- amount of records is 326 830, the overall amount of records is 78 298 236, size of base table in MB is 23 333.
 -- Median value of records is about 2 million per day which corresponds to 600 MB. Lets assume that 2 buckets will
 -- be optimal solution.
--- #1
+
+
+-- #1 as slow as original
 CREATE TABLE IF NOT EXISTS bids_optimised (
  BidID STRING, Ts STRING, iPinYouID STRING, UserAgent STRING, IP STRING, RegionID STRING, CityID STRING,
  AdExchange STRING, publicDomain STRING, URL STRING, AnonymousURL STRING, AdSlotID STRING, AdSlotWidth STRING,
@@ -128,11 +130,25 @@ CREATE TABLE IF NOT EXISTS bids_optimised (
  AdSlotHeight STRING, AdSlotVisibility STRING, AdSlotFormat STRING, AdSlotFloorPrice STRING, CreativeID STRING,
  BiddingPrice STRING, AdvertiserID STRING, UserProfileIDs STRING, device STRING, os STRING, browser STRING)
 COMMENT 'Bid logs dataset optimised'
-PARTITIONED BY (RegionID STRING)
+PARTITIONED BY (bid_date STRING)
 CLUSTERED BY (CityID)
 SORTED BY (UserAgent)
-INTO 2 BUCKETS
+INTO 4 BUCKETS
 STORED AS TEXTFILE;
+
+-- change format to ORC
+CREATE TABLE IF NOT EXISTS bids_orc (
+ BidID STRING, Ts STRING, iPinYouID STRING, UserAgent STRING, IP STRING, RegionID STRING, CityID STRING,
+ AdExchange STRING, publicDomain STRING, URL STRING, AnonymousURL STRING, AdSlotID STRING, AdSlotWidth STRING,
+ AdSlotHeight STRING, AdSlotVisibility STRING, AdSlotFormat STRING, AdSlotFloorPrice STRING, CreativeID STRING,
+ BiddingPrice STRING, AdvertiserID STRING, UserProfileIDs STRING)
+COMMENT 'Bid logs dataset optimised'
+PARTITIONED BY (bid_date STRING)
+CLUSTERED BY (CityID)
+SORTED BY (UserAgent)
+INTO 4 BUCKETS
+STORED AS ORC;
+
 
 INSERT OVERWRITE TABLE bids_optimised PARTITION(bid_date)
 SELECT BidID, Ts, iPinYouID, UserAgent, IP, RegionID, CityID, AdExchange, publicDomain, URL, AnonymousURL,
