@@ -60,7 +60,7 @@ public class TwitBatchConsumerTest {
     }
 
     @Before
-    public void setUp() {
+    public void setUp() throws IOException {
         outputPath = new Path(fs.getHomeDirectory(), "tweeter-hashtags").toString();
         consumer = new TwitBatchConsumer(spark, fs, outputPath, "test-topic", "{'topic1':{'0':0}}", 3, 5);
     }
@@ -90,12 +90,14 @@ public class TwitBatchConsumerTest {
         Dataset<Row> previousStats = spark.read().schema(HASHTAG_STATS_SCHEMA).csv(previousBatchStats);
         consumer.writeStats(previousStats, Collections.emptyList());
 
-        assertTrue(fs.exists(new Path(outputPath)));
-        assertTrue(fs.exists(new Path(outputPath, "date=2018-12-20/hour=11")));
-        assertTrue(fs.exists(new Path(outputPath, "date=2018-12-21/hour=12")));
-        assertTrue(fs.exists(new Path(outputPath, "date=2018-12-21/hour=13")));
-        assertTrue(fs.exists(new Path(outputPath, "date=2018-12-21/hour=14")));
-        assertTrue(fs.exists(new Path(outputPath, "date=2018-12-22/hour=13")));
+        String dataPath = new Path(outputPath, "hashtags").toString();
+
+        assertTrue(fs.exists(new Path(dataPath)));
+        assertTrue(fs.exists(new Path(dataPath, "date=2018-12-20/hour=11")));
+        assertTrue(fs.exists(new Path(dataPath, "date=2018-12-21/hour=12")));
+        assertTrue(fs.exists(new Path(dataPath, "date=2018-12-21/hour=13")));
+        assertTrue(fs.exists(new Path(dataPath, "date=2018-12-21/hour=14")));
+        assertTrue(fs.exists(new Path(dataPath, "date=2018-12-22/hour=13")));
 
         String statsFileName = TwitBatchConsumerTest.class.getResource("/stats_2.csv").getPath();
         Dataset<Row> stats = spark.read().schema(HASHTAG_STATS_SCHEMA).csv(statsFileName);
@@ -119,7 +121,7 @@ public class TwitBatchConsumerTest {
 
         consumer.writeStats(resultStats, partitionsPaths);
 
-        Dataset<Row> wholeDataset = consumer.getArchivedStats(Collections.singletonList(new Path(outputPath).toString()));
+        Dataset<Row> wholeDataset = consumer.getArchivedStats(Collections.singletonList(new Path(dataPath).toString()));
         List<String> wholeData = collectStatsToString(wholeDataset);
 
         List<String> expectedData = ImmutableList.of(
