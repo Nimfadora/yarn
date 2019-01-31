@@ -1,0 +1,4 @@
+# aggregator
+spark-submit --class com.vasileva.streaming.aggregator.HashtagAggregatorMain --packages org.apache.spark:spark-streaming-kafka-0-8_2.11:2.3.2 --master yarn --deploy-mode cluster --driver-memory 1g --executor-memory 1g --executor-cores 2 spark-streaming-v2.jar hashtag-stats hashtag-agg-stats 34
+# processor
+spark-submit --class com.vasileva.streaming.processor.TwitProcessorMain --packages org.apache.spark:spark-streaming-kafka-0-8_2.11:2.3.2 --master yarn --deploy-mode cluster --driver-memory 1g --executor-memory 1g --executor-cores 2 spark-streaming-v2.jar spark-twitter hashtag-stats 24
