@@ -1,4 +1,10 @@
+# create topic for agg stats
+/usr/hdp/2.6.5.0-292/kafka/bin/kafka-topics.sh --create --zookeeper localhost:2181 --replication-factor 1 --partitions 3 --topic hashtag-agg-stats
+# create topic for stats
+/usr/hdp/2.6.5.0-292/kafka/bin/kafka-topics.sh --create --zookeeper localhost:2181 --replication-factor 1 --partitions 3 --topic hashtag-stats
 # aggregator
 spark-submit --class com.vasileva.streaming.aggregator.HashtagAggregatorMain --packages org.apache.spark:spark-streaming-kafka-0-8_2.11:2.3.2 --master yarn --deploy-mode cluster --driver-memory 1g --executor-memory 1g --executor-cores 2 spark-streaming-v2.jar hashtag-stats hashtag-agg-stats 34
 # processor
 spark-submit --class com.vasileva.streaming.processor.TwitProcessorMain --packages org.apache.spark:spark-streaming-kafka-0-8_2.11:2.3.2 --master yarn --deploy-mode cluster --driver-memory 1g --executor-memory 1g --executor-cores 2 spark-streaming-v2.jar spark-twitter hashtag-stats 24
+# start twitter producer
+java -jar kafka-producer-v2.jar spark-twitter

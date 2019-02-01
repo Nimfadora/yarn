@@ -15,6 +15,10 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import static com.vasileva.streaming.HashtagProcessor.aggTwitHashtags;
+import static com.vasileva.streaming.HashtagProcessor.convertToKafkaMessageStream;
+import static com.vasileva.streaming.HashtagProcessor.sendToKafka;
+
 
 public class TwitProcessorMain {
     private static final Duration BATCH_INTERVAL = Seconds.apply(10);
@@ -31,10 +35,10 @@ public class TwitProcessorMain {
 
         Map<String, String> kafkaProps = ImmutableMap.of(
                 "bootstrap.servers", "sandbox-hdp.hortonworks.com:6667",
-                "startingOffsets", "earliest");
-        JavaPairDStream<String, String> data = KafkaUtils.createDirectStream(ssc, String.class, String.class,
+                "auto.offset.reset", "smallest");
+        JavaPairDStream<String, String> twits = KafkaUtils.createDirectStream(ssc, String.class, String.class,
                 StringDecoder.class, StringDecoder.class, kafkaProps, Collections.singleton(inputTopic));
-        SparkTwitProcessor.processTwits(data, outputTopic, WINDOW_LENGTH);
+        sendToKafka(convertToKafkaMessageStream(aggTwitHashtags(twits, WINDOW_LENGTH)), outputTopic);
 
         ssc.start();
         ssc.awaitTerminationOrTimeout(timeout);
